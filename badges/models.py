@@ -1,16 +1,13 @@
 from __future__ import unicode_literals
+
 from datetime import datetime
 
-from django.contrib.auth import get_user_model
-try:
-    from django.urls import reverse
-except ImportError:
-    from django.core.urlresolvers import reverse
-from django.db import models
-from django.conf import settings
-
-from badges.signals import badge_awarded
 from badges.managers import BadgeManager
+from badges.signals import badge_awarded
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.core.urlresolvers import reverse
+from django.db import models
 
 if hasattr(settings, 'BADGE_LEVEL_CHOICES'):
     LEVEL_CHOICES = settings.BADGE_LEVEL_CHOICES
@@ -20,14 +17,16 @@ else:
         ("2", "Silver"),
         ("3", "Gold"),
         ("4", "Diamond"),
+        ("5", "Base"),
     )
+
 
 class Badge(models.Model):
     id = models.CharField(max_length=255, primary_key=True)
     user = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name="badges", through='BadgeToUser')
     level = models.CharField(max_length=1, choices=LEVEL_CHOICES)
 
-    icon = models.ImageField(upload_to='badge_images')
+    icon = models.ImageField(upload_to='static/images/badge_images')
 
     objects = BadgeManager()
 
@@ -60,6 +59,11 @@ class Badge(models.Model):
 
         BadgeToUser.objects.create(badge=self, user=user)
 
+        ##################
+        user.profile.num_of_achievements += 1
+        user.profile.save()
+        ##################
+
         badge_awarded.send(sender=self.meta_badge, user=user, badge=self)
 
         return BadgeToUser.objects.filter(badge=self, user=user).count()
@@ -69,7 +73,7 @@ class Badge(models.Model):
         Gives the number awarded total. Pass in an argument to
         get the number per user, or per queryset.
         """
-        kwargs = {'badge':self}
+        kwargs = {'badge': self}
         if user_or_qs is None:
             pass
         elif isinstance(user_or_qs, get_user_model()):
@@ -80,10 +84,16 @@ class Badge(models.Model):
 
 
 class BadgeToUser(models.Model):
-    badge = models.ForeignKey(Badge, on_delete=models.CASCADE)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    badge = models.ForeignKey(Badge)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL)
 
     created = models.DateTimeField(default=datetime.now)
+
+    def __str__(self):
+        return self.user.username + "/" + self.badge.title
+
+    class Meta:
+        ordering = ['user', 'created']
 
 
 from . import listeners
